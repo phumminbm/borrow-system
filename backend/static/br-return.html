@@ -1586,6 +1586,17 @@ tbody tr:last-child td{border-bottom:none;}
 .dbar-stk { width: 64%; max-width: 26px; display: flex; flex-direction: column-reverse; border-radius: 5px 5px 0 0; overflow: hidden; }
 .dbar-x { font-size: 9px; color: var(--sub2); font-weight: 600; }
 .dbar-v { font-size: 9px; color: var(--text); font-weight: 700; }
+.dbar.dual { gap: 8px; }
+.dbar-pair { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 5px; height: 100%; }
+.dbar-pair-bars { width: 100%; height: 112px; display: flex; align-items: flex-end; justify-content: center; gap: 3px; }
+.dbar-pair-col { width: clamp(7px, 38%, 14px); max-width: 42%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; }
+.dbar-pair-v { font-size: 8.5px; font-weight: 800; color: var(--text); line-height: 1; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.dbar-pair-b { width: 100%; min-height: 4px; border-radius: 5px 5px 1px 1px; box-shadow: inset 0 1px 0 rgba(255,255,255,.16); }
+.dbar-pair-b.req { background: linear-gradient(180deg, var(--pink), #B82D68); }
+.dbar-pair-b.qty { background: linear-gradient(180deg, var(--purple), #6D5BD0); }
+.dbar-pair-stack { width: 100%; min-height: 4px; display: flex; flex-direction: column-reverse; border-radius: 5px 5px 1px 1px; overflow: hidden; box-shadow: inset 0 1px 0 rgba(255,255,255,.16); }
+.dbar-pair-x { font-size: 9px; color: var(--sub2); font-weight: 700; }
+.dbar-pair-meta { font-size: 8px; color: var(--sub2); white-space: nowrap; }
 
 /* grouped Month-over-Month chart */
 .dmom { display: flex; align-items: flex-end; gap: 12px; min-height: 196px; padding: 18px 8px 4px; border-bottom: 1px solid var(--border); }
@@ -2323,8 +2334,8 @@ var BR_STRINGS = {
   "db.hours":                 { th: "ชม.", en: "h" },
   "db.c.dailyTrend":          { th: "คำขอคืน & QTY รายวัน", en: "Daily Requests & QTY" },
   "db.c.dailyTrendSub":       { th: "14 วันล่าสุด", en: "Last 14 days" },
-  "db.c.dailyStatus":         { th: "สถานะรายวัน", en: "Daily Status" },
-  "db.c.dailyStatusSub":      { th: "อนุมัติ / รอตรวจ / แก้ไข · 7 วัน", en: "Approved / Pending / Revision · 7 days" },
+  "db.c.dailyStatus":         { th: "สถานะและ QTY รายวัน", en: "Daily Status & QTY" },
+  "db.c.dailyStatusSub":      { th: "คำขอตามสถานะ + จำนวนสินค้า", en: "Requests by status + submitted QTY" },
   "db.c.returnType":          { th: "แยกตามประเภท · By Return Type", en: "By Return Type" },
   "db.c.returnTypeSub":       { th: "RETURN / CLAIM / SALE / FREE · ตาม QTY", en: "RETURN / CLAIM / SALE / FREE · by QTY" },
   "db.c.topSale":             { th: "Top Sale ตาม QTY", en: "Top Sale by QTY" },
@@ -4036,7 +4047,7 @@ function selectSale(s){
 // ═══════════════════════════════════════════════════════════════
 
 // Dashboard-local filter state. Never touches Sale/Admin FILTERS.
-var DASH_FILTERS = { sale:'all', year:'all', month:'all', mode:'daily' };
+var DASH_FILTERS = { sale:'all', year:'all', month:'all', dateFrom:null, dateTo:null, mode:'daily' };
 
 // QTY per item = pieces. Prefer item.quantity (or .qty); else the sum of
 // the four type quantities. NEVER counts item lines.
@@ -4088,11 +4099,13 @@ function applyDashboardFilters(rows){
   var f = DASH_FILTERS;
   return rows.filter(function(r){
     if(f.sale !== 'all' && String(r.sale||'') !== f.sale) return false;
-    if(f.year !== 'all' || f.month !== 'all'){
+    if(f.year !== 'all' || f.month !== 'all' || f.dateFrom || f.dateTo){
       var d = parseDashboardDate(r);
       if(!d) return false;
       if(f.year  !== 'all' && String(d.y) !== String(f.year))  return false;
       if(f.month !== 'all' && String(d.m) !== String(f.month)) return false;
+      if(f.dateFrom && d.ds < f.dateFrom) return false;
+      if(f.dateTo && d.ds > f.dateTo) return false;
     }
     return true;
   });
@@ -4204,7 +4217,11 @@ function dashMoneyShort(v){
 // Filter event handlers (re-render only; never mutate RECENT).
 function dashSetFilter(key, val){ DASH_FILTERS[key] = val; renderDashboard(); }
 function dashSetMode(mode){ DASH_FILTERS.mode = mode; renderDashboard(); }
-function dashClearFilters(){ DASH_FILTERS = { sale:'all', year:'all', month:'all', mode:DASH_FILTERS.mode }; renderDashboard(); }
+function dashClearFilters(){
+  DASH_FILTERS = { sale:'all', year:'all', month:'all', dateFrom:null, dateTo:null, mode:DASH_FILTERS.mode };
+  if(CAL && CAL.target === 'dashboard') closeCal();
+  renderDashboard();
+}
 
 function renderDashboard(){
   try {
@@ -4254,6 +4271,26 @@ function _renderDashboardHTML(){
     var s = '<div class="dbar-c"><div class="dbar-v">'+val+'</div><div class="dbar-stk" style="height:'+h1+'%">';
     for(var i=0;i<segs.length;i++){ s+='<div style="width:100%;background:'+segs[i][0]+';height:'+segs[i][1]+'%"></div>'; }
     return s+'</div><div class="dbar-x">'+(arguments[3]||'')+'</div></div>';
+  }
+  function periodPairBar(g, reqPct, qtyPct, label, reqSegs){
+    var reqBar = '';
+    if(reqSegs && reqSegs.length){
+      reqBar = '<div class="dbar-pair-stack" style="height:'+reqPct+'%">';
+      for(var si=0; si<reqSegs.length; si++){
+        if(reqSegs[si][1] > 0) reqBar += '<div style="width:100%;background:'+reqSegs[si][0]+';height:'+reqSegs[si][1]+'%"></div>';
+      }
+      reqBar += '</div>';
+    } else {
+      reqBar = '<div class="dbar-pair-b req" style="height:'+reqPct+'%"></div>';
+    }
+    return '<div class="dbar-pair" title="'+esc(label)+' - '+dashNum(g.count)+' '+_t('db.leg.requests')+' - '+dashNum(g.qty)+' '+p+'">'
+      + '<div class="dbar-pair-bars">'
+      + '<div class="dbar-pair-col"><div class="dbar-pair-v">'+dashNum(g.count)+'</div>'+reqBar+'</div>'
+      + '<div class="dbar-pair-col"><div class="dbar-pair-v">'+dashNum(g.qty)+'</div><div class="dbar-pair-b qty" style="height:'+qtyPct+'%"></div></div>'
+      + '</div>'
+      + '<div class="dbar-pair-x">'+esc(label)+'</div>'
+      + '<div class="dbar-pair-meta">'+dashNum(g.count)+' / '+dashNum(g.qty)+'</div>'
+      + '</div>';
   }
   function momBar(g, reqPct, qtyPct){
     return '<div class="dmom-c" title="'+esc(monName(g.m))+' · '+dashNum(g.count)+' '+_t('db.leg.requests')+' · '+dashNum(g.qty)+' '+p+'">'
@@ -4337,11 +4374,16 @@ function _renderDashboardHTML(){
   var fMonth = '<select onchange="dashSetFilter(\'month\',this.value)"><option value="all"'+(DASH_FILTERS.month==='all'?' selected':'')+'>'+_t('db.f.allMonths')+'</option>';
   for(gi=1; gi<=12; gi++) fMonth += optTag(gi, monName(gi), DASH_FILTERS.month);
   fMonth += '</select>';
+  var fDate = '<button id="cal-btn-dashboard" class="btn-date-range'+(DASH_FILTERS.dateFrom?' active':'')+'" onclick="openCal(\'dashboard\',this)">'
+    + '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="14" height="12" rx="2"/><path d="M5 1v4M11 1v4M1 7h14"/></svg>'
+    + (DASH_FILTERS.dateFrom ? getDateLabel('dashboard')+'<span onclick="clearDateFilter(\'dashboard\',event)" style="margin-left:4px;opacity:.6;font-size:11px">x</span>' : _t('br.filter.dateRange'))
+    + '</button>';
 
   h += '<div class="dash-filter">'
     + '<div class="dash-field"><label>'+_t('db.f.sale')+'</label>'+fSale+'</div>'
     + '<div class="dash-field"><label>'+_t('db.f.year')+'</label>'+fYear+'</div>'
     + '<div class="dash-field"><label>'+_t('db.f.month')+'</label>'+fMonth+'</div>'
+    + '<div class="dash-field"><label>'+_t('br.filter.dateRange')+'</label>'+fDate+'</div>'
     + '<div class="dash-field"><label>'+_t('db.f.mode')+'</label><div class="dash-seg">'
       + '<button class="'+(!monthly?'on':'')+'" onclick="dashSetMode(\'daily\')">'+_t('db.f.daily')+'</button>'
       + '<button class="'+(monthly?'on':'')+'" onclick="dashSetMode(\'monthly\')">'+_t('db.f.monthly')+'</button></div></div>'
@@ -4386,37 +4428,46 @@ function _renderDashboardHTML(){
   // ── Period grouping (daily or monthly per mode) ──
   var per = monthly ? groupByMonth(rows) : groupByDay(rows);
   var perShow = per.slice(monthly ? -6 : -14);
-  var maxCount = 1, pi;
-  for(pi=0; pi<perShow.length; pi++) if(perShow[pi].count > maxCount) maxCount = perShow[pi].count;
+  var maxCount = 1, maxQty = 1, pi;
+  for(pi=0; pi<perShow.length; pi++){
+    if(perShow[pi].count > maxCount) maxCount = perShow[pi].count;
+    if(perShow[pi].qty > maxQty) maxQty = perShow[pi].qty;
+  }
   function perLabel(g){ return monthly ? monName(g.m) : String(g.d); }
 
   // ── Charts grid ──
   h += '<div class="dash-sec"><div class="dash-sec-hd"><div class="dash-sec-title"><span class="acc" style="background:var(--blue)"></span>'+_t('db.sec.charts')+'</div><span class="dash-sec-sub">'+(monthly?_t('db.f.monthly'):_t('db.f.daily'))+' · '+dashNum(rows.length)+' '+_t('db.unit.req')+'</span></div>';
   h += '<div class="dash-grid">';
 
-  // 1 · Trend (request count bars + Σ QTY note)
+  // 1 · Trend (grouped bars: request count + submitted QTY)
   var trendBars = '';
   if(perShow.length){
     for(pi=0; pi<perShow.length; pi++){ var gT=perShow[pi];
-      trendBars += bar(String(gT.count), Math.round(gT.count/maxCount*100), [['var(--purple)',100]], perLabel(gT));
+      trendBars += periodPairBar(gT,
+        Math.max(4, Math.round(gT.count/maxCount*100)),
+        Math.max(4, Math.round(gT.qty/maxQty*100)),
+        perLabel(gT));
     }
   } else trendBars = muted(_t('db.empty'));
   h += '<div class="dc">'+dcHead(_t('db.c.dailyTrend'), monthly?_t('db.f.monthly'):_t('db.c.dailyTrendSub'), monthly?_t('db.tag.monthly'):_t('db.tag.daily'))
-    + '<div class="dbar" style="margin-top:auto">'+trendBars+'</div>'
-    + '<div class="dl"><span><i style="background:var(--purple)"></i>'+_t('db.leg.requests')+'</span><span>'+muted('Σ '+_t('db.leg.qty')+': '+dashNum(m.subQty)+' '+p)+'</span></div>'
+    + '<div class="dbar dual" style="margin-top:auto">'+trendBars+'</div>'
+    + '<div class="dl"><span><i style="background:var(--pink)"></i>'+_t('db.leg.requests')+'</span><span><i style="background:var(--purple)"></i>'+_t('db.leg.qty')+'</span><span>'+muted('Σ '+_t('db.leg.qty')+': '+dashNum(m.subQty)+' '+p)+'</span></div>'
     + '</div>';
 
-  // 2 · Status per period (stacked bars: approved / pending / revision)
+  // 2 · Status per period (request stack by status + submitted QTY)
   var G='var(--green)', Y='var(--yellow)', R='#E08A5A';
   var stBars = '';
   for(pi=0; pi<perShow.length; pi++){ var gS=perShow[pi];
-    var tot = gS.approved+gS.pending+gS.rejected; if(tot<=0) tot=1;
-    stBars += bar(String(gS.count), Math.round(gS.count/maxCount*100),
-      [[G, Math.round(gS.approved/tot*100)],[Y, Math.round(gS.pending/tot*100)],[R, Math.round(gS.rejected/tot*100)]], perLabel(gS));
+    var tot = gS.approved+gS.pending+gS.rejected+gS.cancelled; if(tot<=0) tot=1;
+    stBars += periodPairBar(gS,
+      Math.max(4, Math.round(gS.count/maxCount*100)),
+      Math.max(4, Math.round(gS.qty/maxQty*100)),
+      perLabel(gS),
+      [[G, Math.round(gS.approved/tot*100)],[Y, Math.round(gS.pending/tot*100)],[R, Math.round(gS.rejected/tot*100)],['#8E8AA8', Math.round(gS.cancelled/tot*100)]]);
   }
   h += '<div class="dc">'+dcHead(_t('db.c.dailyStatus'), _t('db.c.dailyStatusSub'), monthly?_t('db.tag.monthly'):_t('db.tag.daily'))
-    + '<div class="dbar">'+(stBars||muted(_t('db.empty')))+'</div>'
-    + '<div class="dl"><span><i style="background:'+G+'"></i>'+_t('db.leg.approved')+'</span><span><i style="background:'+Y+'"></i>'+_t('db.leg.pending')+'</span><span><i style="background:'+R+'"></i>'+_t('db.leg.revision')+'</span></div>'
+    + '<div class="dbar dual">'+(stBars||muted(_t('db.empty')))+'</div>'
+    + '<div class="dl"><span><i style="background:var(--pink)"></i>'+_t('db.leg.requests')+'</span><span><i style="background:var(--purple)"></i>'+_t('db.leg.qty')+'</span><span><i style="background:'+G+'"></i>'+_t('db.leg.approved')+'</span><span><i style="background:'+Y+'"></i>'+_t('db.leg.pending')+'</span><span><i style="background:'+R+'"></i>'+_t('db.leg.revision')+'</span><span><i style="background:#8E8AA8"></i>'+_t('db.st.cancelled')+'</span></div>'
     + '</div>';
 
   // 3 · Return type (real)
@@ -4716,8 +4767,13 @@ function fmtDs(ds){
   var o=dsToObj(ds);
   return o.d+' '+calMonthsShort()[o.m]+' '+(BR_LANG==='en' ? o.y : o.y+543);
 }
+function dateFilterState(target){
+  if(target==='sale') return FILTERS;
+  if(target==='dashboard') return DASH_FILTERS;
+  return ADMIN_FILTERS;
+}
 function getDateLabel(target){
-  var f=(target==='sale')?FILTERS:ADMIN_FILTERS;
+  var f=dateFilterState(target);
   if(f.dateFrom){
     var s=fmtDs(f.dateFrom);
     if(f.dateTo && f.dateTo!==f.dateFrom) s+=' – '+fmtDs(f.dateTo);
@@ -4729,7 +4785,7 @@ function getDateLabel(target){
 function openCal(target, btn){
   if(CAL.open && CAL.target===target){ closeCal(); return; }
   CAL.open=true; CAL.target=target;
-  var f=(target==='sale')?FILTERS:ADMIN_FILTERS;
+  var f=dateFilterState(target);
   CAL.from = f.dateFrom ? dsToObj(f.dateFrom) : null;
   CAL.to   = f.dateTo   ? dsToObj(f.dateTo)   : null;
   CAL.step = (CAL.from && !CAL.to) ? 1 : 0;
@@ -4772,18 +4828,20 @@ function applyCalFilter(){
   var fromDs=CAL.from?dateToDs(CAL.from.y,CAL.from.m,CAL.from.d):null;
   var toDs=CAL.to?dateToDs(CAL.to.y,CAL.to.m,CAL.to.d):fromDs;
   if(CAL.target==='sale'){ FILTERS.dateFrom=fromDs; FILTERS.dateTo=toDs; rebuildTable(); }
+  else if(CAL.target==='dashboard'){ DASH_FILTERS.dateFrom=fromDs; DASH_FILTERS.dateTo=toDs; renderDashboard(); }
   else { ADMIN_FILTERS.dateFrom=fromDs; ADMIN_FILTERS.dateTo=toDs; rebuildAdminTable(); }
   closeCal(); renderFilterBtn(CAL.target);
 }
 function clearDateFilter(target,e){
   if(e) e.stopPropagation();
   if(target==='sale'){ FILTERS.dateFrom=null; FILTERS.dateTo=null; rebuildTable(); }
+  else if(target==='dashboard'){ DASH_FILTERS.dateFrom=null; DASH_FILTERS.dateTo=null; renderDashboard(); }
   else { ADMIN_FILTERS.dateFrom=null; ADMIN_FILTERS.dateTo=null; rebuildAdminTable(); }
   renderFilterBtn(target);
 }
 function renderFilterBtn(target){
   var btn=el('cal-btn-'+target); if(!btn) return;
-  var f=(target==='sale')?FILTERS:ADMIN_FILTERS;
+  var f=dateFilterState(target);
   if(f.dateFrom){
     btn.className='btn-date-range active';
     btn.innerHTML='<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="14" height="12" rx="2"/><path d="M5 1v4M11 1v4M1 7h14"/></svg>'+getDateLabel(target)+'<span onclick="clearDateFilter(\''+target+'\',event)" style="margin-left:4px;opacity:.6;font-size:11px">✕</span>';
