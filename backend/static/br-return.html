@@ -4426,8 +4426,13 @@ function _renderDashboardHTML(){
   h += '</div>';
 
   // ── Period grouping (daily or monthly per mode) ──
+  // Daily charts default to the latest 5 days to keep the view uncrowded;
+  // when a Date Range is selected, honor the full filtered range instead so
+  // the user sees exactly what they picked. Monthly mode keeps its last-6
+  // window (unaffected). KPIs + tables use the full filtered dataset.
   var per = monthly ? groupByMonth(rows) : groupByDay(rows);
-  var perShow = per.slice(monthly ? -6 : -14);
+  var dailyHasRange = !!(DASH_FILTERS.dateFrom || DASH_FILTERS.dateTo);
+  var perShow = monthly ? per.slice(-6) : (dailyHasRange ? per : per.slice(-5));
   var maxCount = 1, maxQty = 1, pi;
   for(pi=0; pi<perShow.length; pi++){
     if(perShow[pi].count > maxCount) maxCount = perShow[pi].count;
