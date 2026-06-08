@@ -131,6 +131,14 @@ export default function BRPanel({ theme, lang, onPendingCount }) {
           className="v2-iframe"
           src={BR_RETURN_IFRAME_URL}
           title="BR Return"
+          // Force the browser to always send Referer: <shell origin> on every
+          // iframe request (no path, just the origin). The backend's
+          // /br-return embed gate validates that origin against
+          // BR_RETURN_ALLOWED_EMBED_ORIGINS; without this attribute, some
+          // browsers (and some first-load + cold-start timings) omit Referer
+          // entirely on the initial iframe request, causing a one-time 403
+          // "standalone_br_return_disabled" until the user refreshes.
+          referrerPolicy="origin"
           // sandbox intentionally omitted so localStorage / Apps Script
           // fetch / image uploads keep working exactly as they do standalone.
         />
